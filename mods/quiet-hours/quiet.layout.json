@@ -1,0 +1,16 @@
+{
+  "id": "root",
+  "type": "column",
+  "titlebar": "none",
+  "traffic_lights": [14, 16],
+  "background": "chrome",
+  "preview": "layouts/quiet-hours.svg",
+  "children": [
+    {
+      "id": "board",
+      "type": "block",
+      "window_drag": true,
+      "content": { "mod": "quiet-hours", "props": { "role": "board" } }
+    }
+  ]
+}

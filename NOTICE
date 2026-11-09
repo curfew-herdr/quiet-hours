@@ -1,0 +1,18 @@
+herdr-quiet-hours: quiet hours for the herdr app
+Copyright 2026 Ryan Quellhorst
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The design comes from que (https://github.com/queapp-org/que), by the same
+author, licensed under the Apache License, Version 2.0: the quiet board, the
+logged unlock, quiet now, the apply-tonight guardrail (que's effectiveConfig),
+the overnight summary, the chip's countdown and the settings dialog's layout.
+mods/quiet-hours/unlock.svg is que's open-lock icon
+(src/renderer/src/components/icons.tsx).
+
+The sidebar-width check in mods/quiet-hours/main.js (find, narrow) is adapted
+from the workspace-chrome mod shipped with the Herdr app
+(https://github.com/herdrdev/herdr-app), licensed under the Apache License,
+Version 2.0; modified. The chip draws the Herdr app's own
+mods/workspace-chrome/clock.svg from the person's install; it is not copied
+here.

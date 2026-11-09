@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200">
+  <rect width="320" height="200" fill="#1b1c1e"/>
+  <circle cx="12" cy="11" r="3" fill="#3a3b3e"/><circle cx="22" cy="11" r="3" fill="#3a3b3e"/><circle cx="32" cy="11" r="3" fill="#3a3b3e"/>
+  <text x="70" y="44" font-family="monospace" font-size="9" fill="#8a8c90">[ QUIET ]</text>
+  <text x="250" y="44" font-family="monospace" font-size="8" fill="#55575b" text-anchor="end">until 08:00</text>
+  <text x="70" y="64" font-family="monospace" font-size="8" fill="#55575b">1 working · 2 idle</text>
+  <circle cx="73" cy="83" r="2.2" fill="#6b9e9a"/><rect x="82" y="80" width="54" height="5" rx="2" fill="#4a4c50"/><rect x="144" y="80" width="38" height="5" rx="2" fill="#333538"/>
+  <circle cx="73" cy="99" r="2.2" fill="#4a4c50"/><rect x="82" y="96" width="44" height="5" rx="2" fill="#4a4c50"/><rect x="144" y="96" width="30" height="5" rx="2" fill="#333538"/>
+  <circle cx="73" cy="115" r="2.2" fill="#4a4c50"/><rect x="82" y="112" width="60" height="5" rx="2" fill="#4a4c50"/><rect x="150" y="112" width="34" height="5" rx="2" fill="#333538"/>
+  <rect x="130" y="160" width="60" height="16" rx="3" fill="none" stroke="#3a3b3e"/>
+</svg>
