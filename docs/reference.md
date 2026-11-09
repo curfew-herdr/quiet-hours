@@ -141,6 +141,11 @@ your `main-quiet` clone).
 
 ## Tests
 
+From the repo root, with node 22 or later:
+
 ```sh
-cd mods/quiet-hours && node --test
+npm test
 ```
+
+It runs every `mods/**/*.test.mjs` with `node --test`. CI runs the same on macOS on every push to
+`main` and every pull request.

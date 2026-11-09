@@ -1,0 +1,8 @@
+{
+  "name": "quiet-hours",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"mods/**/*.test.mjs\""
+  }
+}
