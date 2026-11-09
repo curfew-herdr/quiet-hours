@@ -10,6 +10,13 @@ import { div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { rowName } from "./names.mjs";
 
+// A tone between foreground and muted (#c9c9c9 in the curfew theme); the theme has no name for it.
+// The tone of a head's label.
+function secondary(t) {
+  const ch = (c, i) => parseInt(c.slice(1 + 2 * i, 3 + 2 * i), 16);
+  return "#" + [0, 1, 2].map((i) => Math.round(ch(t.foreground, i) * 0.55 + ch(t.muted, i) * 0.45).toString(16).padStart(2, "0")).join("");
+}
+
 // herdr's statuses as the board words them; blocked is "waiting", neutral.
 const WORD = { working: "working", blocked: "waiting", done: "done", idle: "idle" };
 const ORDER = ["working", "waiting", "done", "idle"];
@@ -122,7 +129,7 @@ export function board({ t, mono, state, now, agents, error, onUnlock, onEnd }) {
             .flex_none()
             .justify_between()
             .items_center()
-            .child(div().font_family(mono).text_size(12).text_color(t.muted).child("[ QUIET ]"))
+            .child(div().font_family(mono).text_size(12).text_color(secondary(t)).child("QUIET"))
             .child(faint(clock)),
         )
         .child(faint(countLine(agents)).flex_none())
