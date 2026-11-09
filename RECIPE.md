@@ -45,9 +45,20 @@ any theme); text is the layout's UI font unless marked mono, which is `settings(
   - A count in mono 12 px `dim`: `2 working · 1 waiting · 3 done`, zero counts left out,
     `nothing running` with no agents.
   - One 28 px row per agent, 10 px gaps: a 6 px dot (`accent` while working, else `dim`), the
-    name (13 px, `muted`, at most 240 px: the tab's name if someone named it, else the
-    program's), the space's name (12.5 px, `dim`, taking the rest), the status word (mono
-    11.5 px, `dim`). The list scrolls.
+    name (13 px, `muted`, at most 240 px), the project (12.5 px, `dim`, taking the rest; blank
+    until git answers), the status word (mono 11.5 px, `dim`). The list scrolls. For example
+    `Small bug hunt  uploader  working`.
+    - The name: what the agent's Claude Code session (`app` `claude-code`, or the program
+      `claude`) called itself in its terminal title: the title trimmed, one leading `✳`, `◐`
+      or `◑` and the space after it dropped, cut to 80 characters ending in `…`. `Claude Code`,
+      an empty title and the terminal's address (herdr's stand-in for no title: `t2c`; on
+      another machine `vps/t2c` or `t2c`) are no name. Then the tab's name if someone named
+      it, else the program's, else the tab's, else `tab 2`.
+    - The project, for the agent's folder (its pane's `cwd`, else its space's `folder`, empty
+      meaning the home): the git repository's name, `--git-common-dir` without a trailing
+      `/.git`, its last part (a bare repository's without `.git`), so a linked worktree reads
+      its main checkout's name. Outside a repository, or when git fails, the folder's last
+      part, `~` for the home folder.
   - At the bottom, centered: `unlock 10 min` (the configured minutes), and in a quiet now
     `end quiet`: ghost buttons 30 px tall, 14 px side padding, 6 px radius, a 1 px `border`
     line that turns `input` under the pointer, 12.5 px `muted` text. While unlocked, instead,
@@ -84,7 +95,8 @@ any theme); text is the layout's UI font unless marked mono, which is `settings(
     `Yes, tonight`.
 - **Without a role** (what `herdr-app check` and `mod.open` load): an inert preview of every
   piece side by side on `chrome`: the three chips (idle, unlocked, unlocked with a change for
-  tomorrow), the menu and the board in a 350 px column, then the dialog with a mistyped time
+  tomorrow), the menu and the board (its projects are the folders' names: the preview runs no
+  git) in a 350 px column, then the dialog with a mistyped time
   and the dialog asking "Apply tonight?". `mod.json` sizes it: a 1430×520 dialog.
 
 The board's layout, `layouts/quiet-hours.json`: a root column with `"titlebar": "none"`,
@@ -97,6 +109,12 @@ The board's layout, `layouts/quiet-hours.json`: a root column with `"titlebar": 
   2600 ms, `.loop`), word `working`. blocked: `waiting`, a `dim` dot (neutral on purpose).
   done: `done`, `dim`. idle: `idle`, `dim`. The count line uses the same words, in the order
   working, waiting, done, idle.
+- **The board's projects.** git is asked once per folder. When a folder first shows up among
+  the agents, the render starts a task (`cx.spawn`) that runs `git --no-optional-locks -c
+  core.fsmonitor=false -C <folder> rev-parse --path-format=absolute --git-common-dir` (`exec`,
+  5 s timeout, `on` the space's machine) for each new folder in turn, then redraws. Answers,
+  failures included, last as long as the board copy (a fresh one each time the board's layout
+  shows). Names follow the terminal titles live, with no git.
 - **When quiet starts** (a scheduled window, or a quiet now), the watcher switches the window
   to `quiet-hours`, remembering the layout that was shown. A switch away from the board while
   locked is logged as `bypass` and switched back within a moment.
@@ -131,9 +149,12 @@ The board's layout, `layouts/quiet-hours.json`: a root column with `"titlebar": 
   menu: pure functions of what they're given), `settings.js` (`SettingsForm` holding
   `InputState`s, `settingsDialog`), `form.mjs` (the form to and from `config.json`),
   `clock.mjs` (every rule, pure functions of `now`, no imports: shared by the mod and the
-  watcher), `quietd.mjs` (the watcher), `quiet.layout.json` (the board's layout),
+  watcher), `names.mjs` (a board row's name and project from git's answer, pure functions, no
+  imports), `quietd.mjs` (the watcher), `quiet.layout.json` (the board's layout),
   `unlock.svg`, `mod.json` `{ "place": "none", "overlay": { "kind": "dialog", "width": 1430,
-  "height": 520 } }`, and tests (`clock.test.mjs`, `form.test.mjs`, `quietd.test.mjs`).
+  "height": 520 } }`, and tests (`clock.test.mjs`, `form.test.mjs`, `names.test.mjs`, which
+  also makes a throwaway repository with a linked worktree in the temp folder,
+  `quietd.test.mjs`).
 - **Roles:** `board`, `chip` (both keep the watcher running and read the state), `menu`
   (popup), `settings` (dialog), none (the inert preview, no side effects).
 - **Data** in `<app home>/quiet-hours/`, outside the mod folder (herdr reloads a mod whose files
@@ -166,8 +187,9 @@ The board's layout, `layouts/quiet-hours.json`: a root column with `"titlebar": 
   <app home>/mods/quiet-hours/quietd.mjs`, `<node>` being the first of `command -v node`,
   `/usr/local/bin/node`, `/opt/homebrew/bin/node` whose `--version` is 18 or later. No
   `herdr.space`/`herdr.tab` labels, so the terminal stays out of the window. Again every 60 s.
-- **herdr functions:** `agents`, `spaces` (which tabs are named), `layout` (the sidebar's
-  width), `theme`, `settings`, `props`, `appHome`, `hc`, `exec`, `readTextFile`,
+- **herdr functions:** `agents`, `spaces` (which tabs are named; a space's folder and machine),
+  `panes` (an agent's live folder), `home` (`~`), `layout` (the sidebar's width), `theme`,
+  `settings`, `props`, `appHome`, `hc`, `exec` (node, git), `readTextFile`,
   `writeTextFile`, `watchFolder` (the data folder, with a 15 s timer as a fallback),
   `openOverlay` (menu popup 170×136; settings `kind: "dialog", modal: true, frame: "none"`,
   500×476), `closeOverlay`, `notify`, `shared`/`setShared` (`quiet.summary`: the night already
@@ -175,7 +197,8 @@ The board's layout, `layouts/quiet-hours.json`: a root column with `"titlebar": 
   `cx.timer.every(1000)` on the chip while unlocked.
 - **Shipped parts used:** `mods/workspace-chrome/clock.svg` (herdr's, drawn from the person's
   install).
-- **Programs:** `node`, `/bin/sh -c "command -v node"`, `hc`, `herdr-app`, `ps` (the pid check).
+- **Programs:** `node`, `/bin/sh -c "command -v node"`, `hc`, `herdr-app`, `ps` (the pid check),
+  `git` (the board's `rev-parse`, read-only).
 - **Art:** `unlock.svg`, a 16 px open lock in a thin line style (1.5 px stroke, round caps).
 
 ## Watch out
@@ -194,6 +217,9 @@ The board's layout, `layouts/quiet-hours.json`: a root column with `"titlebar": 
 - No `setTimeout` in the mod (it has none: `cx.timer`, `cx.spawn`); the watcher is plain node
   and may. Never keep a `cx`.
 - The board can't hold back herdr's own toasts; they show for about 5 s, silent.
+- herdr reports a terminal that set no title by its address (`t2c`) as its `title`: that is no
+  session name.
+- Never wait on git in `render`: the render only starts the task and draws what is known.
 - `ctrl-shift-l` cycling stops at the board in work hours (the watcher switches straight back).
 - The escape hatch (`ctrl-alt-shift-escape`) sets the shown layout aside; at night that is the
   board's, which the watcher writes back (and logs a bypass).
@@ -208,7 +234,9 @@ The board's layout, `layouts/quiet-hours.json`: a root column with `"titlebar": 
 ## Done when
 
 - `herdr-app check mods/quiet-hours` passes and `cd mods/quiet-hours && node --test` passes
-  (36 tests).
+  (44 tests).
+- On the board, a Claude Code session that named itself `Small bug hunt` in a worktree of
+  `uploader` reads `Small bug hunt  uploader  working`; an agent in the home folder shows `~`.
 - `herdr-app do mod.open '{"name":"quiet-hours"}'` shows the preview, and afterwards
   `hc ls --label quiet-hours.watcher=1` lists no new watcher.
 - With the chip block in the shown layout, `hc ls --label quiet-hours.watcher=1` lists one live

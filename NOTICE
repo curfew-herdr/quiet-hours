@@ -1,4 +1,4 @@
-herdr-quiet-hours: quiet hours for the herdr app
+quiet-hours: quiet hours for the herdr app
 Copyright 2026 Ryan Quellhorst
 
 Licensed under the Apache License, Version 2.0 (see LICENSE).
@@ -8,7 +8,10 @@ author, licensed under the Apache License, Version 2.0: the quiet board, the
 logged unlock, quiet now, the apply-tonight guardrail (que's effectiveConfig),
 the overnight summary, the chip's countdown and the settings dialog's layout.
 mods/quiet-hours/unlock.svg is que's open-lock icon
-(src/renderer/src/components/icons.tsx).
+(src/renderer/src/components/icons.tsx). mods/quiet-hours/names.mjs ports que's
+name for a Claude Code session (src/shared/session-label.ts, and capTitle in
+src/shared/brief.ts): a board row is named after the session and shows its
+project, as que's quiet board shows a workspace's title and project.
 
 The sidebar-width check in mods/quiet-hours/main.js (find, narrow) is adapted
 from the workspace-chrome mod shipped with the Herdr app

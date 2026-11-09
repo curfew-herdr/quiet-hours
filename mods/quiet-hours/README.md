@@ -12,7 +12,8 @@ makes drifting into it visible.
 | `mods/quiet-hours/main.js`, `ui.js`, `settings.js` | the mod: `role: "board"` (the quiet screen), `"chip"` (sidebar control), `"menu"` (the chip's popup), `"settings"` (the settings dialog); no role draws an inert preview of all of them (what `herdr-app check` and `herdr-app do mod.open '{"name":"quiet-hours"}'` show; `mod.json` sizes that preview). The preview never starts the watcher or writes a file: `herdr-app check` runs a mod's `init` against the real app home. |
 | `mods/quiet-hours/quietd.mjs` | the watcher: a node process, the only writer of `state.json` and `log.jsonl` |
 | `mods/quiet-hours/clock.mjs` | the rules, pure functions of `now`: windows, config validation, the apply-tonight guardrail. No node imports: the watcher and the mod import this one file |
-| `mods/quiet-hours/form.mjs` | the settings dialog's form to and from `config.json`, through `clock.mjs`'s validation (`node --test` runs `clock.test.mjs`, `form.test.mjs`, `quietd.test.mjs`) |
+| `mods/quiet-hours/form.mjs` | the settings dialog's form to and from `config.json`, through `clock.mjs`'s validation (`node --test` runs `clock.test.mjs`, `form.test.mjs`, `names.test.mjs`, `quietd.test.mjs`) |
+| `mods/quiet-hours/names.mjs` | what a board row says, pure functions: the name a Claude Code session gives itself in its terminal title, and the project (the git repository) of an agent's folder from git's answer |
 | `mods/quiet-hours/quiet.layout.json` | the board layout; the watcher writes it to `layouts/quiet-hours.json` when it starts, and again when quiet starts, if that file is missing |
 | `mods/quiet-hours/unlock.svg` | the open lock the chip shows while unlocked (the clock icon is herdr's own, `mods/workspace-chrome/clock.svg`) |
 | `layouts/quiet-hours.json` | the board: one dim block, no tabs or terminals |
@@ -65,6 +66,29 @@ sidebar column, 160 px wide or more (narrower, the chip draws only its icon).
   layout itself (`state.json` `returnLayout`).
 
 A broken edit keeps the last good config and shows the reason on the chip.
+
+## The board
+
+The quiet screen: `[ QUIET ]` with when quiet ends and the time, a count
+(`2 working · 1 waiting`), and a row per agent:
+
+```
+●  Small bug hunt   uploader   working
+```
+
+- The name: the one the agent's Claude Code session gave itself in its terminal
+  title (from its first prompt or `/rename`), without the leading `✳`, `◐` or
+  `◑`, at most 80 characters. Before the session has a name (`Claude Code`, an
+  empty title, or no title at all, which herdr reports as the terminal's
+  address), and for other agents: the tab's name if someone named it, else the
+  program's.
+- Faint, the project: the git repository the agent works in (its pane's live
+  folder, else its space's folder), by the main checkout's folder name, so every
+  worktree of `uploader` reads `uploader`. Outside a repository, the folder's
+  name, `~` for the home folder.
+- The status: `working` (the dot pulses), `waiting`, `done` or `idle`.
+
+At the bottom, `unlock 10 min`, and `end quiet` in a quiet now.
 
 ## The chip
 
@@ -135,6 +159,13 @@ scheduled window apply at once.
   it stays out of the window). `<node>` is the first node 18 or later from
   `command -v node`, `/usr/local/bin/node`, `/opt/homebrew/bin/node`. They check
   again every minute and restart a watcher whose `state.version` differs from theirs.
+- The board asks git which repository each agent's folder is in, read-only:
+  `git --no-optional-locks -c core.fsmonitor=false -C <folder> rev-parse
+  --path-format=absolute --git-common-dir` (at most 5 s; for a space on another
+  machine, on that machine). Once per folder, when it first shows up among the
+  agents, from a task and never while drawing; the answers last while the board
+  is up. A row's project is blank until git answers, and the folder's name when
+  git fails. The chip and the preview run no git.
 - The watcher ticks every 15 s, at the next boundary, and at once when
   `config.json`, `control.json`, `settings.json` or `shared.json` change. It
   reads the shown layout from `herdr-app status`. Quiet and not unlocked: it

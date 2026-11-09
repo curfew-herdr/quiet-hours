@@ -11,19 +11,22 @@
 // It reads quiet-hours/state.json and writes quiet-hours/control.json, and the
 // settings dialog writes quiet-hours/config.json; the watcher decides, switches
 // layouts, logs and handles sounds. The board and the chip make sure the
-// watcher runs (a hidden core terminal labelled quiet-hours.watcher).
+// watcher runs (a hidden core terminal labelled quiet-hours.watcher). The board
+// names its rows with names.mjs, asking git (read-only) which repository each
+// agent's folder is in.
 
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import * as fs from "fs/promises";
 import {
-  agents, spaces, theme, settings, layout, props, appHome, hc, exec, readTextFile, writeTextFile,
+  agents, spaces, panes, home, theme, settings, layout, props, appHome, hc, exec, readTextFile, writeTextFile,
   watchFolder, openOverlay, closeOverlay, notify, shared, setShared,
 } from "herdr";
 import { board, chip, menu, summaryLine, unlockedNow } from "./ui.js";
 import { SettingsForm, settingsDialog, DIALOG } from "./settings.js";
 import { formFrom, configFrom, configText } from "./form.mjs";
 import { FIRST_CONFIG, validateConfig, endsEarly, countdown } from "./clock.mjs";
+import { commonDirArgs, folderName, projectName } from "./names.mjs";
 
 const VERSION = 3; // quietd.mjs's VERSION
 const LABEL = "quiet-hours.watcher=1";
@@ -51,10 +54,37 @@ function find(node, id) {
 // The sidebar's rail, as workspace-chrome reads it.
 const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
 
-// Agents with whether their tab was named (the board shows a named tab's name).
+// Agents with whether their tab was named (a row with no session name shows a named tab's name,
+// names.mjs) and where each works now: its pane's live folder, else its space's folder (empty: its
+// machine's home), on its space's machine.
 function listed() {
-  const named = new Set(spaces().flatMap((s) => s.tabs.filter((tab) => tab.named).map((tab) => tab.id)));
-  return agents().map((a) => ({ ...a, named: named.has(a.tab) }));
+  const sp = spaces();
+  const named = new Set(sp.flatMap((s) => s.tabs.filter((tab) => tab.named).map((tab) => tab.id)));
+  const space = new Map(sp.map((s) => [s.id, s]));
+  const cwd = new Map(panes().map((p) => [p.pane, p.cwd]));
+  return agents().map((a) => {
+    const s = space.get(a.space);
+    const machine = s?.machine ?? null;
+    return { ...a, named: named.has(a.tab), machine, folder: cwd.get(a.pane) || s?.folder || (machine ? "" : home()) };
+  });
+}
+
+// Where an agent works, as the key of the board's project cache.
+const place = (a) => JSON.stringify([a.machine, a.folder]);
+// The home folder, shown as `~`: this computer's; another machine's isn't known.
+const homeOf = (machine) => (machine ? null : home());
+
+// An agent folder's project (names.mjs): its git repository's name, else the folder's name. git
+// only reads, for at most 5 s; for a space on another machine it runs there.
+async function projectOf(machine, folder) {
+  let answer = null;
+  if (folder) {
+    try {
+      const r = await exec("git", commonDirArgs(folder), { on: machine, timeout: 5000 });
+      if (r.code === 0) answer = r.stdout;
+    } catch {}
+  }
+  return projectName(folder, answer, homeOf(machine));
 }
 
 // Absolute path of a node >= 18: the user's PATH first, then the usual places.
@@ -87,6 +117,8 @@ export default class Quiet extends View {
     this.error = null; // the mod's own: the watcher couldn't start, a write failed
     this.hover = false;
     this.restarted = false;
+    this.projects = new Map(); // the board's: place -> project, once git has answered
+    this.asking = new Set(); // places git is being asked about
     if (this.role === "settings") return this.initSettings(cx);
     if (this.role === "preview") return this.initPreview();
     if (this.role !== "board" && this.role !== "chip") return;
@@ -235,6 +267,27 @@ export default class Quiet extends View {
 
   quietFor(minutes) {
     return this.control(quietChange(minutes));
+  }
+
+  // The board's rows: each agent with its project. git is asked once per folder, when a folder
+  // first shows up among the agents, in a task (never in the render itself); a row's project is
+  // blank until git answers. The preview runs nothing: its rows show the folders' names.
+  rows(cx) {
+    const list = listed();
+    if (this.role !== "board") return list.map((a) => ({ ...a, project: folderName(a.folder, homeOf(a.machine)) }));
+    const fresh = [...new Set(list.map(place))].filter((k) => !this.projects.has(k) && !this.asking.has(k));
+    if (fresh.length) {
+      for (const k of fresh) this.asking.add(k);
+      cx.spawn(async (cx) => {
+        for (const k of fresh) {
+          const [machine, folder] = JSON.parse(k);
+          this.projects.set(k, await projectOf(machine, folder));
+          this.asking.delete(k);
+        }
+        cx.notify();
+      });
+    }
+    return list.map((a) => ({ ...a, project: this.projects.get(place(a)) ?? "" }));
   }
 
   // ---- the settings dialog ------------------------------------------------
@@ -411,7 +464,7 @@ export default class Quiet extends View {
     };
   }
 
-  render() {
+  render(cx) {
     const t = theme();
     const now = Date.now();
     const error = this.error ?? this.state?.error ?? null;
@@ -434,7 +487,7 @@ export default class Quiet extends View {
       });
     }
     if (this.role === "board") {
-      return board({ t, mono: mono(), state: this.state, now, agents: listed(), error, onUnlock: (_e, cx) => this.unlock(cx), onEnd: (_e, cx) => this.endQuiet(cx) });
+      return board({ t, mono: mono(), state: this.state, now, agents: this.rows(cx), error, onUnlock: (_e, cx) => this.unlock(cx), onEnd: (_e, cx) => this.endQuiet(cx) });
     }
     const live = this.role === "chip";
     const chipView = (state, err) =>
@@ -482,7 +535,7 @@ export default class Quiet extends View {
           .child(div().h(36).flex_none().child(chipView(unlocked, null)))
           .child(div().h(36).flex_none().child(chipView({ ...unlocked, pending: true }, null)))
           .child(div().w(170).flex_none().child(menu({ t, onPick: () => {} })))
-          .child(div().flex_1().min_h(0).child(board({ t, mono: mono(), state: sample, now, agents: listed(), error: null, onUnlock: () => {} }))),
+          .child(div().flex_1().min_h(0).child(board({ t, mono: mono(), state: sample, now, agents: this.rows(), error: null, onUnlock: () => {} }))),
       )
       .child(dialog(this.preview.form, { showAll: true, message: null, asking: null, busy: false }))
       .child(dialog(this.preview.asking, { showAll: true, message: null, asking: { windowStart: sample.windowStart }, busy: false }));

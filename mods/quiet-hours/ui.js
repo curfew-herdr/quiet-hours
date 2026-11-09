@@ -8,6 +8,7 @@
 
 import { div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
+import { rowName } from "./names.mjs";
 
 // herdr's statuses as the board words them; blocked is "waiting", neutral.
 const WORD = { working: "working", blocked: "waiting", done: "done", idle: "idle" };
@@ -42,9 +43,6 @@ export function summaryLine(list, s) {
 export const unlockedNow = (state, now) => Boolean(state?.quiet && state.unlock && state.unlock.until > now);
 const minutesLeft = (state, now) => Math.max(1, Math.ceil((state.unlock.until - now) / 60_000));
 
-// A row's name: the tab's, when someone named it; else what runs there.
-const rowName = (a) => (a.named ? a.tab_name : a.program?.name || a.tab_name || `tab ${a.tab_index}`);
-
 // ---- the board ---------------------------------------------------------------
 
 export function board({ t, mono, state, now, agents, error, onUnlock, onEnd }) {
@@ -63,6 +61,8 @@ export function board({ t, mono, state, now, agents, error, onUnlock, onEnd }) {
         : hm(now);
   const faint = (text) => div().font_family(mono).text_size(12).text_color(t.dim).child(text);
 
+  // An agent: its dot, its name (names.mjs: its Claude Code session's, else its tab's or
+  // program's), its project faint (main.js: the git repository it works in), its status.
   const row = (a) => {
     const working = a.status === "working";
     return h_flex()
@@ -80,7 +80,7 @@ export function board({ t, mono, state, now, agents, error, onUnlock, onEnd }) {
           .when(working, (el) => el.loop("opacity", { from: 0.3, to: 1, period: 2600 })),
       )
       .child(div().flex_none().max_w(240).truncate().text_size(13).text_color(t.muted).child(rowName(a)))
-      .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.dim).child(a.space_name ?? ""))
+      .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.dim).child(a.project ?? ""))
       .child(div().flex_none().font_family(mono).text_size(11.5).text_color(t.dim).child(WORD[a.status] ?? a.status));
   };
 
