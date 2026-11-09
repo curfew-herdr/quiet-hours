@@ -39,7 +39,8 @@ any theme); text is the layout's UI font unless marked mono, which is `settings(
   `30 min`, `1 hour`, `2 hours`.
 - **The board** (`role: "board"`), the whole window during quiet, on `chrome`. Padding 56 px
   top, 28 px bottom, 40 px at the sides; a centered column at most 560 px wide, 18 px gaps:
-  - A row: `[ QUIET ]` (mono 12 px, `muted`) at the left; at the right, mono 12 px `dim`:
+  - A row: `QUIET` (mono 12 px, halfway between `foreground` and `muted`, the tone of a
+    head's label) at the left; at the right, mono 12 px `dim`:
     `until 08:00 · 23:41` in a scheduled night, `until 14:30` in a quiet now,
     `next 18:00 · 12:00` outside quiet.
   - A count in mono 12 px `dim`: `2 working · 1 waiting · 3 done`, zero counts left out,
@@ -70,7 +71,7 @@ any theme); text is the layout's UI font unless marked mono, which is `settings(
   (`frame: "none"`): it draws its own. A 3 px margin, then a `popover` body with a 1 px
   `input` border, 2 px radius, 20 px side padding and 16 px top and bottom, 13 px text; a
   5×5 px `dim` square on each of the frame's four corners.
-  - Top row: `[ QUIET HOURS ]` and `esc`, mono 10.5 px `dim`.
+  - Top row: `QUIET HOURS` (the head's tone, as on the board) and `esc` (`dim`), mono 10.5 px.
   - The switch: a 26×14 px pill (1 px border `muted` and `selected` fill when on, `input` and
     `chrome` when off) with an 8 px knob (`foreground` at the right when on, `dim` at the left
     when off), then `Quiet hours on` / `Quiet hours off`.

@@ -7,7 +7,7 @@ key is in [`mods/quiet-hours/README.md`](../mods/quiet-hours/README.md).
 ## What it does
 
 - **The board.** During your quiet hours the window switches to the `quiet-hours` layout: one
-  dim screen with `[ QUIET ]`, when quiet ends and the time, a count (`2 working · 1 waiting`),
+  dim screen with `QUIET`, when quiet ends and the time, a count (`2 working · 1 waiting`),
   and a row per agent: a dot, the name its Claude Code session gave itself (else its tab or
   program), faint the project it works in (its git repository, so every worktree reads the
   repository's name), and its status, e.g. `Small bug hunt  uploader  working`. No terminals,

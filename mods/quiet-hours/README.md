@@ -69,7 +69,7 @@ A broken edit keeps the last good config and shows the reason on the chip.
 
 ## The board
 
-The quiet screen: `[ QUIET ]` with when quiet ends and the time, a count
+The quiet screen: `QUIET` with when quiet ends and the time, a count
 (`2 working · 1 waiting`), and a row per agent:
 
 ```
