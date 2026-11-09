@@ -4,11 +4,7 @@ Quiet hours for herdr. At night the window turns into a dim board of your agents
 go off, and every way out is logged: a 10-minute unlock, "quiet now" for a meeting, per-day
 hours, a guardrail against ending tonight early, and a summary of the night in the morning.
 
-![Quiet hours](preview.png)
-
-It is the quiet hours of [que](https://queapp.org) (a macOS app for running Claude Code
-sessions in git worktrees, [source](https://github.com/queapp-org/que), by the same author),
-rebuilt as a herdr mod. It doesn't make night work impossible; it makes drifting into it visible.
+It doesn't make night work impossible; it makes drifting into it visible.
 
 ## What it does
 

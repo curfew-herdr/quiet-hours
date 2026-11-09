@@ -176,7 +176,7 @@ The board's layout, `layouts/quiet-hours.json`: a root column with `"titlebar": 
 - **Shipped parts used:** `mods/workspace-chrome/clock.svg` (herdr's, drawn from the person's
   install).
 - **Programs:** `node`, `/bin/sh -c "command -v node"`, `hc`, `herdr-app`, `ps` (the pid check).
-- **Art:** `unlock.svg`, a 16 px open lock in que's line style (1.5 px stroke, round caps).
+- **Art:** `unlock.svg`, a 16 px open lock in a thin line style (1.5 px stroke, round caps).
 
 ## Watch out
 
