@@ -12,7 +12,8 @@ export const TIME_ERROR = "use HH:MM";
 export const UNLOCK_ERROR = `${UNLOCK_MIN} to ${UNLOCK_MAX}`;
 
 // A form: { enabled, nightly: "hours" | "none", start, end,
-//   days: { mon: { mode: "same" | "off" | "custom", start, end }, ... }, unlock: "10" }.
+//   days: { mon: { mode: "same" | "off" | "custom", start, end }, ... }, unlock: "10",
+//   onlyWithChip }.
 // A day that isn't custom carries the nightly hours, so switching it to
 // custom starts from them.
 export function formFrom(config) {
@@ -23,10 +24,19 @@ export function formFrom(config) {
     const o = config.days?.[d];
     days[d] = o === undefined ? { mode: "same", start, end } : o === "none" ? { mode: "off", start, end } : { mode: "custom", start: o[0], end: o[1] };
   }
-  return { enabled: config.enabled, nightly: hours ? "hours" : "none", start, end, days, unlock: String(config.unlock_minutes) };
+  return { enabled: config.enabled, nightly: hours ? "hours" : "none", start, end, days, unlock: String(config.unlock_minutes), onlyWithChip: config.only_with_chip };
 }
 
 const isObject = (v) => Boolean(v) && typeof v === "object" && !Array.isArray(v);
+
+// only_with_chip is written once it's on, right after unlock_minutes; a file
+// that has the key keeps it where it is. Off and not in the file: left out, so
+// an unchanged form writes the file back as it was.
+function withOnlyWithChip(raw, on) {
+  if ("only_with_chip" in raw) return { ...raw, only_with_chip: on };
+  if (!on) return raw;
+  return Object.fromEntries(Object.entries(raw).flatMap((e) => (e[0] === "unlock_minutes" ? [e, ["only_with_chip", true]] : [e])));
+}
 
 // What's wrong, field by field ({start, end, "mon.start", ..., unlock}), and
 // with nothing wrong the config to save: `base` (config.json as read) with
@@ -58,7 +68,7 @@ export function configFrom(form, base) {
   }
   if (Object.keys(errors).length) return { errors, error: null, raw: null, config: null };
 
-  const raw = { ...(isObject(base) ? base : {}), enabled: form.enabled, default: def, days, unlock_minutes: minutes };
+  const raw = withOnlyWithChip({ ...(isObject(base) ? base : {}), enabled: form.enabled, default: def, days, unlock_minutes: minutes }, form.onlyWithChip === true);
   try {
     return { errors, error: null, raw, config: validateConfig(raw) };
   } catch (e) {

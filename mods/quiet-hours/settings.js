@@ -1,9 +1,10 @@
 // The settings dialog: quiet hours on or off, the nightly window, a row per
 // weekday (same, off, or its own hours, as que's settings lay them out), the
-// unlock length, and Save. Drawn in que's language: a bracketed mono label,
-// hairlines, neutral greys, nearly square corners with the four corner points
-// of a drawing's frame; the accent only on the field being typed in, and
-// que's light primary button for Save.
+// unlock length, whether quiet applies only in layouts with the quiet chip
+// (the on/off switch again, with a faint line under it), and Save. Drawn in
+// que's language: a bracketed mono label, hairlines, neutral greys, nearly
+// square corners with the four corner points of a drawing's frame; the accent
+// only on the field being typed in, and que's light primary button for Save.
 //
 // SettingsForm holds the live fields; settingsDialog draws them. main.js reads
 // and writes the files (and asks "Apply tonight?").
@@ -20,7 +21,7 @@ function secondary(t) {
   return "#" + [0, 1, 2].map((i) => Math.round(ch(t.foreground, i) * 0.55 + ch(t.muted, i) * 0.45).toString(16).padStart(2, "0")).join("");
 }
 
-export const DIALOG = { width: 500, height: 476 };
+export const DIALOG = { width: 500, height: 520 };
 
 const NAME = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
 const TIME_KEYS = ["start", "end", ...DAYS.flatMap((d) => [`${d}.start`, `${d}.end`])];
@@ -32,7 +33,7 @@ function textOf(form, key) {
 }
 
 // The dialog's fields: an InputState per time and for the unlock length, and
-// the switch and modes. Build it in init: InputState.new needs a live host call.
+// the switches and modes. Build it in init: InputState.new needs a live host call.
 export class SettingsForm {
   constructor(form, onSubmit) {
     this.inputs = {};
@@ -56,9 +57,10 @@ export class SettingsForm {
     this.take(form);
   }
 
-  // The switch, the modes, and what the fields were filled with.
+  // The switches, the modes, and what the fields were filled with.
   take(form) {
     this.enabled = form.enabled;
+    this.onlyWithChip = Boolean(form.onlyWithChip);
     this.nightly = form.nightly;
     this.mode = Object.fromEntries(DAYS.map((d) => [d, form.days[d].mode]));
     this.loaded = { ...this.mode };
@@ -79,7 +81,7 @@ export class SettingsForm {
   // The form's plain values, for form.mjs.
   form() {
     const days = Object.fromEntries(DAYS.map((d) => [d, { mode: this.mode[d], start: this.value(`${d}.start`), end: this.value(`${d}.end`) }]));
-    return { enabled: this.enabled, nightly: this.nightly, start: this.value("start"), end: this.value("end"), days, unlock: this.value("unlock") };
+    return { enabled: this.enabled, nightly: this.nightly, start: this.value("start"), end: this.value("end"), days, unlock: this.value("unlock"), onlyWithChip: this.onlyWithChip };
   }
 
   // A day switched to custom starts from the nightly hours, unless it had its
@@ -102,7 +104,7 @@ export class SettingsForm {
 // error shows; before, a field's shows once you leave it. message: a line
 // above the buttons (a write that failed, a problem in the file). asking: the
 // "Apply tonight?" question replaces it, with its two answers.
-export function settingsDialog({ t, mono, form, errors, showAll, message, asking, busy, onToggle, onNightly, onMode, onSave, onCancel, onAnswer }) {
+export function settingsDialog({ t, mono, form, errors, showAll, message, asking, busy, onToggle, onOnlyWithChip, onNightly, onMode, onSave, onCancel, onAnswer }) {
   const shown = (key) => (errors[key] && (showAll || form.focused !== key) ? errors[key] : null);
   const faint = (text) => div().font_family(mono).text_size(12).text_color(t.dim).child(text);
   const hairline = () => div().h(1).flex_none().bg(t.border);
@@ -200,29 +202,37 @@ export function settingsDialog({ t, mono, form, errors, showAll, message, asking
     .child(div().pl(8).text_size(12.5).text_color(t.dim).child("minutes"))
     .child(error("unlock"));
 
-  const toggle = h_flex()
-    .id("qs-enabled")
+  // A switch: a 26×14 track, its knob at the end when on, and its words.
+  const switcher = (id, on, onClick, text) =>
+    h_flex()
+      .id(id)
+      .flex_none()
+      .h(24)
+      .gap(10)
+      .items_center()
+      .cursor_pointer()
+      .on_click(onClick)
+      .child(
+        h_flex()
+          .w(26)
+          .h(14)
+          .flex_none()
+          .px(2)
+          .items_center()
+          .rounded_full()
+          .border(1)
+          .border_color(on ? t.muted : t.input)
+          .bg(on ? t.selected : t.chrome)
+          .when(on, (el) => el.justify_end())
+          .child(div().size(8).rounded_full().bg(on ? t.foreground : t.dim)),
+      )
+      .child(div().text_color(on ? t.foreground : t.muted).child(text));
+  const toggle = switcher("qs-enabled", form.enabled, onToggle, form.enabled ? "Quiet hours on" : "Quiet hours off");
+  // only_with_chip: the same switch, and under its words, faint, what it does.
+  const onlyWithChip = v_flex()
     .flex_none()
-    .h(24)
-    .gap(10)
-    .items_center()
-    .cursor_pointer()
-    .on_click(onToggle)
-    .child(
-      h_flex()
-        .w(26)
-        .h(14)
-        .flex_none()
-        .px(2)
-        .items_center()
-        .rounded_full()
-        .border(1)
-        .border_color(form.enabled ? t.muted : t.input)
-        .bg(form.enabled ? t.selected : t.chrome)
-        .when(form.enabled, (el) => el.justify_end())
-        .child(div().size(8).rounded_full().bg(form.enabled ? t.foreground : t.dim)),
-    )
-    .child(div().text_color(form.enabled ? t.foreground : t.muted).child(form.enabled ? "Quiet hours on" : "Quiet hours off"));
+    .child(switcher("qs-only-with-chip", form.onlyWithChip, onOnlyWithChip, "Only in layouts with the quiet chip"))
+    .child(div().h(16).pl(36).truncate().text_size(12).text_color(t.dim).child("Other layouts are left alone; switching to one during quiet is logged."));
 
   const button = (id, text, primary, action) =>
     h_flex()
@@ -305,6 +315,8 @@ export function settingsDialog({ t, mono, form, errors, showAll, message, asking
     .child(hairline())
     .child(div().h(6).flex_none())
     .child(unlock)
+    .child(div().h(4).flex_none())
+    .child(onlyWithChip)
     .child(div().flex_1().min_h(10))
     .child(hairline())
     .child(div().h(10).flex_none())

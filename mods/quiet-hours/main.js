@@ -28,7 +28,7 @@ import { formFrom, configFrom, configText } from "./form.mjs";
 import { FIRST_CONFIG, validateConfig, endsEarly, countdown } from "./clock.mjs";
 import { commonDirArgs, folderName, projectName } from "./names.mjs";
 
-const VERSION = 3; // quietd.mjs's VERSION
+const VERSION = 4; // quietd.mjs's VERSION
 const LABEL = "quiet-hours.watcher=1";
 const NAME = "quiet-hours-watcher";
 const MINUTE = 60_000;
@@ -436,6 +436,11 @@ export default class Quiet extends View {
         form.enabled = !form.enabled;
         cx.notify();
       },
+      onOnlyWithChip: (_e, cx) => {
+        if (!live) return;
+        form.onlyWithChip = !form.onlyWithChip;
+        cx.notify();
+      },
       onNightly: (v, cx) => {
         if (!live) return;
         form.nightly = v;
@@ -460,7 +465,8 @@ export default class Quiet extends View {
     this.preview = {
       // One with a mistyped time, to show the inline error.
       form: new SettingsForm({ ...sample, days: { ...sample.days, fri: { mode: "custom", start: "20:00", end: "25:00" } } }, () => {}),
-      asking: new SettingsForm({ ...sample, end: "06:00" }, () => {}),
+      // And one with only_with_chip on, so both looks of the switch show.
+      asking: new SettingsForm({ ...sample, end: "06:00", onlyWithChip: true }, () => {}),
     };
   }
 
@@ -516,7 +522,7 @@ export default class Quiet extends View {
     // Preview: a sample night and every piece, drawn inert (clicks do nothing):
     // the chips (idle; unlocked; unlocked over a change waiting for tomorrow),
     // the menu and the board; the settings dialog with a mistyped time, and
-    // asking "Apply tonight?".
+    // asking "Apply tonight?" (with "Only in layouts with the quiet chip" on).
     const sample = { version: VERSION, quiet: true, kind: "scheduled", windowStart: now - 3 * 60 * MINUTE, windowEnd: now + 9 * 60 * MINUTE, nextStart: null, unlockMinutes: 10, unlock: null, error: null };
     const unlocked = { ...sample, unlock: { startedAt: now, until: now + 8 * MINUTE } };
     const dialog = (form, extra) => div().w(DIALOG.width).h(DIALOG.height).flex_none().child(this.dialogView(t, form, extra));

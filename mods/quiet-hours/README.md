@@ -11,7 +11,7 @@ makes drifting into it visible.
 |---|---|
 | `mods/quiet-hours/main.js`, `ui.js`, `settings.js` | the mod: `role: "board"` (the quiet screen), `"chip"` (sidebar control), `"menu"` (the chip's popup), `"settings"` (the settings dialog); no role draws an inert preview of all of them (what `herdr-app check` and `herdr-app do mod.open '{"name":"quiet-hours"}'` show; `mod.json` sizes that preview). The preview never starts the watcher or writes a file: `herdr-app check` runs a mod's `init` against the real app home. |
 | `mods/quiet-hours/quietd.mjs` | the watcher: a node process, the only writer of `state.json` and `log.jsonl` |
-| `mods/quiet-hours/clock.mjs` | the rules, pure functions of `now`: windows, config validation, the apply-tonight guardrail. No node imports: the watcher and the mod import this one file |
+| `mods/quiet-hours/clock.mjs` | the rules, pure functions of `now`: windows, config validation, the apply-tonight guardrail, the watcher's move each tick (the board, back, or nothing) and, for `only_with_chip`, whether a layout has a quiet-hours block. No node imports: the watcher and the mod import this one file |
 | `mods/quiet-hours/form.mjs` | the settings dialog's form to and from `config.json`, through `clock.mjs`'s validation (`node --test` runs `clock.test.mjs`, `form.test.mjs`, `names.test.mjs`, `quietd.test.mjs`) |
 | `mods/quiet-hours/names.mjs` | what a board row says, pure functions: the name a Claude Code session gives itself in its terminal title, and the project (the git repository) of an agent's folder from git's answer |
 | `mods/quiet-hours/quiet.layout.json` | the board layout; the watcher writes it to `layouts/quiet-hours.json` when it starts, and again when quiet starts, if that file is missing |
@@ -20,7 +20,7 @@ makes drifting into it visible.
 | `quiet-hours/config.json` | your settings (below); created on first run |
 | `quiet-hours/control.json` | what the mod asks for: `{ "unlock": {startedAt, until} \| null, "manual": {start, end} \| null, "applyTonight": {windowStart, at} }` (`applyTonight` only after a "Yes, tonight") |
 | `quiet-hours/state.json` | what the watcher decided (the mod reads this); with `held` and `pending` (below) |
-| `quiet-hours/log.jsonl` | one line per event: `window-start`, `window-end`, `manual-start`, `manual-end`, `unlock`, `relock`, `lock`, `bypass`, `apply-tonight` |
+| `quiet-hours/log.jsonl` | one line per event: `window-start`, `window-end`, `manual-start`, `manual-end`, `unlock`, `relock`, `lock`, `bypass` (with `stayed: true` when it went to a layout without the chip under `only_with_chip`, and wasn't pulled back), `apply-tonight` |
 | `quiet-hours/quietd.pid` | the running watcher's process id |
 
 `quiet-hours/` is in the app home (`~/.config/herdr-app/quiet-hours/`), outside
@@ -51,7 +51,7 @@ sidebar column, 160 px wide or more (narrower, the chip draws only its icon).
 
 ```json
 { "enabled": true, "default": ["18:00", "08:00"], "days": { "sat": "none", "sun": ["20:00", "09:00"] },
-  "unlock_minutes": 10, "return_layout": "main" }
+  "unlock_minutes": 10, "only_with_chip": false, "return_layout": "main" }
 ```
 
 - `enabled`: the schedule. `false` turns it off; "quiet now" still works. The
@@ -61,6 +61,14 @@ sidebar column, 160 px wide or more (narrower, the chip draws only its icon).
   or before the start ends the next morning. `"none"` for no default window.
 - `days`: per weekday (`sun` .. `sat`), `"none"` or its own window.
 - `unlock_minutes`: how long one unlock lasts, 1 to 240. A new unlock is a new log entry.
+- `only_with_chip`: off (`false`) by default, and then quiet hours follow you into
+  every layout. `true`: they apply only on the board and in layouts with a
+  quiet-hours block anywhere in them (the chip). In any other layout the window
+  isn't switched to the board and the sounds stay as you have them; leaving the
+  board for one during quiet is still a `bypass` (logged with `stayed: true`,
+  counted in the morning), it just isn't pulled back. A layout file that is
+  missing or isn't valid JSON counts as having the chip. Left out of the file
+  until you turn it on.
 - `return_layout`: where the window goes when quiet ends if the layout that was
   shown when quiet began is gone (default `main`). The watcher remembers that
   layout itself (`state.json` `returnLayout`).
@@ -111,6 +119,9 @@ countdown). The dialog has:
 - a row per weekday, Monday first: `same` (the nightly hours, shown faint),
   `off` (`"none"`), or `custom` with its own start and end;
 - `Unlock`: minutes, 1 to 240;
+- a switch for `only_with_chip`, off by default: `Only in layouts with the quiet
+  chip`, and under it, faint, *Other layouts are left alone; switching to one
+  during quiet is logged.*;
 - Cancel and Save (Enter in a field saves, Esc closes).
 
 Times are typed as 24-hour `HH:MM` (`8:00` is fine and is saved as `08:00`).
@@ -118,7 +129,8 @@ A field that isn't valid shows why at the end of its row once you leave it, and
 every one shows after Save; Save never writes an invalid config. The checks are
 the watcher's own (`clock.mjs`, through `form.mjs`). Save writes `config.json`
 in place with its snapshot, keeping keys the dialog doesn't edit
-(`return_layout`) and the 2-space format.
+(`return_layout`) and the 2-space format. `only_with_chip` goes in once it's
+on, after `unlock_minutes`; turned off again it stays, `false`.
 
 The board has no settings, on purpose: at night you unlock first (logged), and
 the chip's settings work while the unlock lasts. When quiet locks again (the
@@ -172,11 +184,21 @@ scheduled window apply at once.
   switches to `quiet-hours` (a switch away from the board is logged as a `bypass` and
   undone). Not quiet, or unlocked: it switches from `quiet-hours` back to the layout you
   were on.
+- With `only_with_chip` (off by default) it also reads `layouts/<shown>.json`, and
+  switches to `quiet-hours` only from a layout with a quiet-hours block. A layout
+  without one is left alone: quiet starting or ending there switches nothing (the
+  start and end are logged, the summary made, as ever), and a switch from the locked
+  board to one is logged as a `bypass` with `stayed: true` and not undone; it doesn't
+  become the layout you return to. From there to a layout with the chip, the board
+  comes back. The setting applies at the next tick, no restart.
 - Sounds: entering quiet with `settings.json` `sounds.enabled: true`, it sets it to
   false and puts it back when quiet ends (or when the watcher stops). Only that
-  value changes; the rest of the file is left byte for byte.
+  value changes; the rest of the file is left byte for byte. With `only_with_chip`,
+  only where quiet applies: moving to a layout without the chip puts them back as
+  quiet's end would, and coming back turns them off again.
 - When a scheduled window ends, the chip posts one `Overnight` notification with
-  the agents now and the night's unlocks, bypasses and apply-tonight changes.
+  the agents now and the night's unlocks, bypasses (the ones that stayed too) and
+  apply-tonight changes.
 
 ## Stop it
 
@@ -185,6 +207,8 @@ scheduled window apply at once.
 - For a night: unlock (the board's button). In the evening, `"enabled": false`
   (or the settings' switch); at night that change waits for the morning unless
   you unlock and apply it tonight, which is logged.
+- With `only_with_chip` on: a layout without the chip. Going there from the board
+  during quiet is logged as a bypass.
 - The watcher: `hc kill quiet-hours-watcher` (or `hc kill <address>` from
   `hc ls --label quiet-hours.watcher=1`). It restores the sounds as it exits. While the
   board or chip is on screen the mod starts it again within a minute, so to stop
@@ -205,8 +229,12 @@ scheduled window apply at once.
 - The escape hatch (`ctrl-alt-shift-escape`) sets the shown layout aside: during
   quiet that is `quiet-hours.json`, which the watcher restores (and logs a bypass). If
   it's your own layout, the return falls back to `return_layout` until you move it back.
+  With `only_with_chip`, herdr's `main` has no chip, so the window stays there (a
+  bypass that stayed) and the board's file comes back the next time it's needed.
 - The morning notification needs the chip: if quiet ends on a layout without it,
-  there is none.
+  it comes when the chip next shows within 12 hours of the end, else not at all.
+- With `only_with_chip`, a chip added to the layout on screen during quiet brings
+  the board at the next tick (within 15 s): the watcher doesn't watch `layouts/`.
 - A switch away and back within a few hundred ms can go unseen as a bypass.
 - herdr has no way to tell a mod it is on the board's layout "for real", so the
   board's layout is a plain file the watcher keeps; Settings shows it without a
