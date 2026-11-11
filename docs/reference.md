@@ -12,7 +12,9 @@ key is in [`mods/quiet-hours/README.md`](../mods/quiet-hours/README.md).
   program), faint the project it works in (its git repository, so every worktree reads the
   repository's name), and its status, e.g. `Small bug hunt  uploader  working`. No terminals,
   no tabs, no colours that call for action. Switching to another layout is logged as a bypass
-  and undone.
+  and undone. The settings' `Only in layouts with the quiet chip` (off by default) keeps quiet
+  to layouts that have the chip: other layouts are left alone, board and sounds both, and a
+  switch to one from the board is logged as a bypass that stands.
 - **A logged unlock.** `unlock 10 min` on the board gives the window back for 10 minutes (you
   choose the length, 1 to 240). The chip counts down (`9:52 left`) and has `lock now`. Each
   unlock is a line in the log.

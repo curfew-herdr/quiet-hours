@@ -67,7 +67,7 @@ any theme); text is the layout's UI font unless marked mono, which is `settings(
   - A problem, if any, under it in 11.5 px `dim`.
   - The rule: at night nothing on the board reads as a message or a call to action. No status
     colors, one slow pulse.
-- **The settings dialog** (`role: "settings"`), 500×476 px, modal, with no herdr frame
+- **The settings dialog** (`role: "settings"`), 500×520 px, modal, with no herdr frame
   (`frame: "none"`): it draws its own. A 3 px margin, then a `popover` body with a 1 px
   `input` border, 2 px radius, 20 px side padding and 16 px top and bottom, 13 px text; a
   5×5 px `dim` square on each of the frame's four corners.
@@ -87,6 +87,9 @@ any theme); text is the layout's UI font unless marked mono, which is `settings(
       placeholder; the border is `accent` while typing in it, `ansi9` when its error shows,
       else `border`. A `→` in `dim` between the two.
   - A hairline, then `Unlock`: a 48 px field and `minutes` (12.5 px, `dim`).
+  - Then a switch as the first one, `Only in layouts with the quiet chip`, and under it,
+    indented 36 px, `Other layouts are left alone; switching to one during quiet is logged.`
+    (12 px, `dim`).
   - At the bottom, after a hairline: an 18 px message line (12 px; `ansi9` for a failure),
     then `Cancel` and `Save` at the right, 26 px tall, 11 px padding, 2 px radius, 12.5 px
     medium. Save is `solid` on `solid_foreground` text (`Saving…` while it writes); Cancel is
@@ -98,7 +101,7 @@ any theme); text is the layout's UI font unless marked mono, which is `settings(
   piece side by side on `chrome`: the three chips (idle, unlocked, unlocked with a change for
   tomorrow), the menu and the board (its projects are the folders' names: the preview runs no
   git) in a 350 px column, then the dialog with a mistyped time
-  and the dialog asking "Apply tonight?". `mod.json` sizes it: a 1430×520 dialog.
+  and the dialog asking "Apply tonight?". `mod.json` sizes it: a 1430×564 dialog.
 
 The board's layout, `layouts/quiet-hours.json`: a root column with `"titlebar": "none"`,
 `"traffic_lights": [14, 16]`, `"background": "chrome"`, and one block `board`
@@ -118,7 +121,10 @@ The board's layout, `layouts/quiet-hours.json`: a root column with `"titlebar": 
   shows). Names follow the terminal titles live, with no git.
 - **When quiet starts** (a scheduled window, or a quiet now), the watcher switches the window
   to `quiet-hours`, remembering the layout that was shown. A switch away from the board while
-  locked is logged as `bypass` and switched back within a moment.
+  locked is logged as `bypass` and switched back within a moment. With `only_with_chip`
+  (off by default) quiet holds only on the board and in layouts with a quiet-hours block:
+  any other layout is left alone, the board and the sounds both, and a switch to one from
+  the locked board is logged as `bypass` with `stayed: true` and not switched back.
 - **Unlock** (board): writes an unlock for `unlock_minutes` (default 10). The watcher switches
   back to the remembered layout; the chip counts down; `lock now` ends it. When the unlock runs
   out (`relock`) or is ended (`lock`), the board comes back and an open settings dialog closes.
@@ -153,14 +159,14 @@ The board's layout, `layouts/quiet-hours.json`: a root column with `"titlebar": 
   watcher), `names.mjs` (a board row's name and project from git's answer, pure functions, no
   imports), `quietd.mjs` (the watcher), `quiet.layout.json` (the board's layout),
   `unlock.svg`, `mod.json` `{ "place": "none", "overlay": { "kind": "dialog", "width": 1430,
-  "height": 520 } }`, and tests (`clock.test.mjs`, `form.test.mjs`, `names.test.mjs`, which
+  "height": 564 } }`, and tests (`clock.test.mjs`, `form.test.mjs`, `names.test.mjs`, which
   also makes a throwaway repository with a linked worktree in the temp folder,
   `quietd.test.mjs`).
 - **Roles:** `board`, `chip` (both keep the watcher running and read the state), `menu`
   (popup), `settings` (dialog), none (the inert preview, no side effects).
 - **Data** in `<app home>/quiet-hours/`, outside the mod folder (herdr reloads a mod whose files
   change): `config.json` `{ enabled, default: ["18:00","08:00"] | "none", days: { sun..sat:
-  pair | "none" }, unlock_minutes: 1..240, return_layout }`, `control.json` (the mod's
+  pair | "none" }, unlock_minutes: 1..240, only_with_chip?: boolean, return_layout }`, `control.json` (the mod's
   requests: `unlock {startedAt, until}`, `manual {start, end}`, `applyTonight {windowStart,
   at}`), `state.json` (the watcher's decision: `version, quiet, kind, windowStart, windowEnd,
   nextStart, enabled, unlockMinutes, unlock, held, pending, returnLayout, summary,
@@ -193,7 +199,7 @@ The board's layout, `layouts/quiet-hours.json`: a root column with `"titlebar": 
   `settings`, `props`, `appHome`, `hc`, `exec` (node, git), `readTextFile`,
   `writeTextFile`, `watchFolder` (the data folder, with a 15 s timer as a fallback),
   `openOverlay` (menu popup 170×136; settings `kind: "dialog", modal: true, frame: "none"`,
-  500×476), `closeOverlay`, `notify`, `shared`/`setShared` (`quiet.summary`: the night already
+  500×520), `closeOverlay`, `notify`, `shared`/`setShared` (`quiet.summary`: the night already
   summed up); `fs/promises` `mkdir`. Timers: `cx.timer.every(15000)` for the state and clock,
   `cx.timer.every(1000)` on the chip while unlocked.
 - **Shipped parts used:** `mods/workspace-chrome/clock.svg` (herdr's, drawn from the person's
@@ -249,6 +255,9 @@ The board's layout, `layouts/quiet-hours.json`: a root column with `"titlebar": 
 - In quiet, `unlock 10 min` switches back and the chip counts down from `10:00 left`;
   `lock now` brings the board back; `log.jsonl` has `manual-start`, `unlock`, `lock` lines.
 - Switching to another layout while the board is locked is undone and logged as `bypass`.
+- With `Only in layouts with the quiet chip` on, a layout without the chip is left alone
+  during quiet (no board, sounds as they were), and leaving the board for it is logged as a
+  `bypass` with `stayed` and stands.
 - The settings dialog refuses `25:00` with `use HH:MM` and doesn't write; saving valid hours
   updates `config.json` and the chip's next start.
 - In a scheduled night, saving an earlier end asks *Apply tonight?*; **No, from tomorrow** leaves

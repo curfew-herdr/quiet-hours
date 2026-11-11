@@ -10,6 +10,11 @@
 // whether it's quiet, switches the window to the `quiet` layout (or back),
 // keeps herdr's sounds off during quiet, logs and writes state.
 //
+// With config.json `only_with_chip` (off by default) quiet applies only on the
+// board and in layouts with a quiet-hours block (it reads layouts/<shown>.json):
+// in any other layout the window isn't switched and the sounds are left as
+// they are; leaving the locked board for one is a bypass, logged `stayed`.
+//
 // The apply-tonight guardrail (clock.mjs `guard`): a scheduled window keeps
 // the config it is running under (state.json `held`, so a restart keeps it);
 // an edit that would end it sooner or remove it waits for the window to end
@@ -21,10 +26,12 @@ import os from "node:os";
 import path from "node:path";
 import { execFile, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { FIRST_CONFIG, validateConfig, validateControl, activeWindow, activeUnlock, nextStart, nextBoundary, summarize, guard } from "./clock.mjs";
+import {
+  FIRST_CONFIG, validateConfig, validateControl, activeWindow, activeUnlock, nextStart, nextBoundary, summarize, guard, boardMove, layoutCarries,
+} from "./clock.mjs";
 
 // The mod restarts a watcher whose state carries another version.
-export const VERSION = 3;
+export const VERSION = 4;
 
 const TICK_MS = 15_000;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -105,6 +112,18 @@ async function shownLayout() {
 
 const layoutExists = (name) => Boolean(name) && fs.existsSync(path.join(P.layouts, `${name}.json`));
 
+// layouts/<name>.json has a quiet-hours block (clock.mjs layoutCarries). A file
+// that is missing, unreadable or not a JSON object counts as having one: quiet
+// still applies.
+export function carriesQuiet(name, layouts = P.layouts) {
+  try {
+    const json = parse(readText(path.join(layouts, `${name}.json`)) ?? "");
+    return json && typeof json === "object" && !Array.isArray(json) ? layoutCarries(json) : true;
+  } catch {
+    return true;
+  }
+}
+
 // Switches and waits (up to ~2 s) until the window reports it. Returns the
 // layout shown afterwards and an error, if any.
 async function switchTo(name) {
@@ -148,7 +167,10 @@ export function withSounds(text, enabled) {
 }
 
 // During quiet the sounds are off; the value they had is remembered
-// (`soundsSaved`) and put back when quiet ends. Returns the new soundsSaved.
+// (`soundsSaved`) and put back when quiet ends. `quiet`: quiet holds where the
+// window is (with only_with_chip, not in a layout without the chip, so moving
+// there puts them back as quiet's end would, and coming back turns them off).
+// Returns the new soundsSaved.
 function handleSounds(quiet, saved, errors) {
   try {
     const text = readText(P.settings);
@@ -207,7 +229,7 @@ function log(entry) {
   const tail =
     entry.type === "apply-tonight"
       ? ` ${hhmm(entry.windowEnd)} -> ${entry.newEnd ? hhmm(entry.newEnd) : "now"}`
-      : `${entry.to ? ` -> ${entry.to}` : ""}${entry.until ? ` until ${hhmm(entry.until)}` : ""}${entry.windowEnd && entry.type.endsWith("start") ? ` until ${hhmm(entry.windowEnd)}` : ""}`;
+      : `${entry.to ? ` -> ${entry.to}` : ""}${entry.stayed ? " (stayed: no quiet chip)" : ""}${entry.until ? ` until ${hhmm(entry.until)}` : ""}${entry.windowEnd && entry.type.endsWith("start") ? ` until ${hhmm(entry.windowEnd)}` : ""}`;
   say(`${entry.type}${tail}`);
 }
 
@@ -288,17 +310,24 @@ async function tick() {
     log({ type: "unlock", startedAt: unlock.startedAt, until: unlock.until, kind: win.kind, ...(unlock.why ? { why: unlock.why } : {}) });
   }
 
-  const soundsSaved = handleSounds(Boolean(win), Boolean(st.soundsSaved), errors);
-
-  // The window: locked quiet shows the board; otherwise never the board.
+  // The window: locked quiet shows the board; otherwise never the board. With
+  // only_with_chip, a layout without a quiet-hours block is left alone, and so
+  // are the sounds there (clock.mjs boardMove).
   let returnLayout = st.returnLayout ?? config.return_layout;
   const locked = Boolean(win && !unlock);
   let shown = await shownLayout();
-  if (shown !== null && locked && shown !== "quiet-hours") {
-    // Left the board without an unlock: logged, pulled back, and where they
-    // went doesn't become the morning's layout.
-    if (lastShown === "quiet-hours" && lastLocked) log({ type: "bypass", to: shown, kind: win.kind });
-    else returnLayout = shown;
+  const only = config.only_with_chip;
+  const carries = only && shown !== null && carriesQuiet(shown);
+  const move = boardMove({ locked, shown, last: { shown: lastShown, locked: lastLocked }, only, carries });
+
+  const soundsSaved = handleSounds(Boolean(win) && move.applies, Boolean(st.soundsSaved), errors);
+
+  // Left the board without an unlock: logged, and pulled back unless it went to
+  // a layout quiet doesn't apply in (`stayed`); where they went doesn't become
+  // the morning's layout.
+  if (move.bypass) log({ type: "bypass", to: shown, kind: win.kind, ...(move.bypass.stayed ? { stayed: true } : {}) });
+  if (move.remember) returnLayout = shown;
+  if (move.to === "quiet-hours") {
     try {
       ensureBoardLayout();
     } catch (e) {
@@ -308,7 +337,7 @@ async function tick() {
     if (r.error) errors.push(`switch to quiet: ${r.error}`);
     else say(`showing quiet (was ${shown})`);
     shown = r.shown ?? shown;
-  } else if (shown === "quiet-hours" && !locked) {
+  } else if (move.to === "back") {
     const target = [returnLayout, config.return_layout, "main"].find(layoutExists) ?? "main";
     const r = await switchTo(target);
     if (r.error) errors.push(`switch to ${target}: ${r.error}`);

@@ -7,6 +7,9 @@
 // window; a manual window ({start, end} epoch ms) ignores it and applies only
 // when no scheduled window covers now.
 //
+// Also the watcher's move each tick (boardMove): the board, back, or nothing,
+// and with only_with_chip which layouts quiet applies in (layoutCarries).
+//
 // No node imports: the watcher (node) and the mod (herdr's runtime imports
 // ./clock.mjs as is) share this one copy of the rules.
 
@@ -14,18 +17,23 @@ export const DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
 // The fill-ins for keys config.json leaves out. return_layout is only the
 // fallback: the watcher returns to the layout that was shown when quiet began.
+// only_with_chip: quiet applies only on the board and in layouts with a
+// quiet-hours block (off: in every layout).
 export const DEFAULT_CONFIG = Object.freeze({
   enabled: true,
   default: ["18:00", "08:00"],
   days: {},
   unlock_minutes: 10,
+  only_with_chip: false,
   return_layout: "main",
 });
 
 // What the watcher writes when there is no config.json yet (a new install):
 // the defaults with the schedule off, so installing in the evening never locks
 // the window at once. "Quiet now" works; the settings dialog turns it on.
-export const FIRST_CONFIG = Object.freeze({ ...DEFAULT_CONFIG, enabled: false });
+// only_with_chip stays out of it: the file gets the key once someone turns it on.
+const { only_with_chip: _, ...WRITTEN } = DEFAULT_CONFIG;
+export const FIRST_CONFIG = Object.freeze({ ...WRITTEN, enabled: false });
 
 // unlock_minutes' bounds.
 export const UNLOCK_MIN = 1;
@@ -63,6 +71,7 @@ export function validateConfig(raw) {
   if (!Number.isInteger(c.unlock_minutes) || c.unlock_minutes < UNLOCK_MIN || c.unlock_minutes > UNLOCK_MAX) {
     throw new Error(`"unlock_minutes" must be a whole number from ${UNLOCK_MIN} to ${UNLOCK_MAX}`);
   }
+  if (typeof c.only_with_chip !== "boolean") throw new Error('"only_with_chip" must be true or false');
   if (typeof c.return_layout !== "string" || !/^[A-Za-z0-9._-]+$/.test(c.return_layout) || c.return_layout === "quiet-hours") {
     throw new Error('"return_layout" must be a layout name other than "quiet-hours"');
   }
@@ -165,6 +174,47 @@ export function nextBoundary(now, config, control, unlockMinutes = config.unlock
   return future.length ? Math.min(...future) : null;
 }
 
+// ---- the window: the board, back, or nothing ----------------------------------
+//
+// Locked quiet shows the board; otherwise never the board. With only_with_chip
+// quiet applies only on the board and in layouts with a quiet-hours block: a
+// layout without one is left alone (no board, the sounds as you have them), and
+// a switch from the locked board to it is a bypass that stands.
+
+const BOARD = "quiet-hours";
+
+// A layout (layouts/<name>.json, parsed) has a quiet-hours block at any depth:
+// a block's content in rows, columns and stacks, a floating block, a pane
+// header, a stack's header.
+export function layoutCarries(node) {
+  if (Array.isArray(node)) return node.some(layoutCarries);
+  if (!node || typeof node !== "object") return false;
+  if (node.mod === BOARD || node.header === BOARD) return true;
+  return Object.values(node).some(layoutCarries);
+}
+
+// The watcher's move this tick.
+//   locked:  quiet and not unlocked;
+//   shown:   the layout on screen (null: herdr didn't answer);
+//   last:    {shown, locked} after the previous tick;
+//   only:    config.only_with_chip;
+//   carries: the shown layout has a quiet-hours block (layoutCarries; a file
+//            that can't be read counts as having one).
+// Returns {applies, to, bypass, remember}: applies, quiet holds where the
+// window is (sounds go off only then); to, BOARD, "back" (the return layout)
+// or null; bypass, null or {stayed} for a switch away from the locked board;
+// remember, the shown layout becomes the one to return to. A bypass never does:
+// where they went doesn't become the morning's layout.
+export function boardMove({ locked, shown, last, only, carries }) {
+  const applies = !only || shown === null || shown === BOARD || Boolean(carries);
+  const left = last?.shown === BOARD && Boolean(last?.locked);
+  if (shown !== null && locked && shown !== BOARD) {
+    if (!applies) return { applies, to: null, bypass: left ? { stayed: true } : null, remember: false };
+    return { applies, to: BOARD, bypass: left ? { stayed: false } : null, remember: !left };
+  }
+  return { applies, to: shown === BOARD && !locked ? "back" : null, bypass: null, remember: false };
+}
+
 // ---- the apply-tonight guardrail (que's effectiveConfig) ---------------------
 //
 // Editing config.json mid-window must not be a quiet way out: a change that
@@ -213,7 +263,8 @@ export function guard(now, held, file, request) {
 
 // The overnight summary of a window from the log's entries: unlocks, the
 // minutes they were open (each ends at its expiry, its lock, the next unlock
-// or the window's end, whichever is first), bypasses and apply-tonight edits.
+// or the window's end, whichever is first), bypasses (pulled back or stayed)
+// and apply-tonight edits.
 export function summarize(entries, windowStart, windowEnd) {
   const inWindow = (t) => typeof t === "number" && t >= windowStart && t <= windowEnd;
   const unlocks = entries.filter((e) => e.type === "unlock" && inWindow(e.startedAt)).sort((a, b) => a.startedAt - b.startedAt);

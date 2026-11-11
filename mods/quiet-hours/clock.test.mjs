@@ -4,9 +4,11 @@ process.env.TZ = "America/New_York";
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {
   DAYS, DEFAULT_CONFIG, FIRST_CONFIG, validateConfig, validateControl, scheduledAt, activeWindow,
   nextStart, nextBoundary, activeUnlock, summarize, effectiveConfig, endsEarly, guard, countdown,
+  layoutCarries, boardMove,
 } from "./clock.mjs";
 
 const at = (y, m, d, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -133,6 +135,15 @@ test("a new install's config is the defaults with the schedule off; the fallback
   assert.equal(nextStart(at(2026, 11, WED, 12), validateConfig(FIRST_CONFIG)), null);
 });
 
+test("only_with_chip is off unless set, must be a boolean, and stays out of a new install's file", () => {
+  assert.equal(validateConfig({}).only_with_chip, false);
+  assert.equal(validateConfig({ only_with_chip: true }).only_with_chip, true);
+  for (const bad of ["yes", 1, null, []]) assert.throws(() => validateConfig({ only_with_chip: bad }), /"only_with_chip" must be true or false/);
+  // The first-run file is what it was: the key comes once someone turns it on.
+  assert.deepEqual(Object.keys(FIRST_CONFIG), ["enabled", "default", "days", "unlock_minutes", "return_layout"]);
+  assert.equal(validateConfig(FIRST_CONFIG).only_with_chip, false);
+});
+
 test("control validation keeps the good parts", () => {
   assert.deepEqual(validateControl(null), { unlock: null, manual: null, applyTonight: null, errors: [] });
   const c = validateControl({ unlock: { startedAt: 1, until: 0 }, manual: { start: 10, end: 20 } });
@@ -163,6 +174,106 @@ test("the overnight summary counts unlocks, their open minutes and bypasses", ()
     { at: we, type: "window-end" },
   ];
   assert.deepEqual(summarize(log, ws, we), { windowEnd: we, unlocks: 2, unlockMinutes: 14, bypasses: 1, appliedTonight: 1, appliedAt: t + 100 * MIN });
+});
+
+test("a bypass that stayed (only_with_chip) counts as a bypass in the summary", () => {
+  const ws = at(2026, 11, WED, 18);
+  const we = at(2026, 11, WED + 1, 8);
+  const log = [
+    { at: ws + 60 * MIN, type: "bypass", to: "work", kind: "scheduled" },
+    { at: ws + 90 * MIN, type: "bypass", to: "plain", kind: "scheduled", stayed: true },
+  ];
+  assert.equal(summarize(log, ws, we).bypasses, 2);
+});
+
+// ---- the window: the board, back, or nothing ---------------------------------
+
+const block = (mod, props) => ({ id: `b-${mod}`, type: "block", content: { mod, ...(props ? { props } : {}) } });
+const CHIP = block("quiet-hours", { role: "chip" });
+// A layout without the chip: a sidebar, a tab block with pane headers, and
+// "quiet-hours" only where it isn't a mod (an id, a prop).
+const PLAIN = {
+  id: "root",
+  type: "row",
+  children: [
+    { id: "sidebar", type: "column", children: [block("spaces"), { ...block("curfew-sidebar", { role: "quiet-hours" }), id: "quiet-hours" }] },
+    { id: "main", type: "block", content: { tab: "active", pane: { header: { content: { mod: "pane" }, height: 30 } } } },
+  ],
+};
+// A copy of PLAIN that `where` puts the chip in, so each case is its own layout.
+const withChip = (where) => {
+  const l = structuredClone(PLAIN);
+  where(l);
+  return l;
+};
+
+test("a layout carries quiet hours with a quiet-hours block at any depth", () => {
+  assert.equal(layoutCarries(PLAIN), false);
+  // The foot of the sidebar, a column in a column, as Curfew's layout has it; a row deeper.
+  assert.equal(layoutCarries(withChip((l) => l.children[0].children.push({ id: "sidebar-foot", type: "column", children: [CHIP, block("curfew-usage")] }))), true);
+  assert.equal(layoutCarries(withChip((l) => l.children[0].children.push({ id: "foot", type: "column", children: [{ id: "foot-row", type: "row", children: [CHIP] }] }))), true);
+  // A stack's child that isn't the active one.
+  assert.equal(layoutCarries(withChip((l) => l.children.push({ id: "panel", type: "stack", active: "files", children: [block("files"), CHIP] }))), true);
+  // A floating block, on the root or a nested node.
+  assert.equal(layoutCarries(withChip((l) => (l.floating = [{ id: "float", content: { mod: "quiet-hours", props: { role: "chip" } }, edge: "left" }]))), true);
+  assert.equal(layoutCarries(withChip((l) => (l.children[0].floating = [{ id: "float", content: { mod: "quiet-hours" } }]))), true);
+  // A pane header, and a stack's header naming the mod.
+  assert.equal(layoutCarries(withChip((l) => (l.children[1].content.pane.header.content.mod = "quiet-hours"))), true);
+  assert.equal(layoutCarries(withChip((l) => l.children.push({ id: "panel", type: "stack", header: "quiet-hours", children: [block("files")] }))), true);
+  // A hidden column still carries it.
+  assert.equal(layoutCarries(withChip((l) => l.children.push({ id: "side", type: "column", hidden: true, children: [CHIP] }))), true);
+  // The board's own layout.
+  assert.equal(layoutCarries(JSON.parse(fs.readFileSync(new URL("./quiet.layout.json", import.meta.url), "utf8"))), true);
+});
+
+// The rule before only_with_chip, as the tick had it inline.
+function before({ locked, shown, last }) {
+  if (shown !== null && locked && shown !== "quiet-hours") {
+    const left = last.shown === "quiet-hours" && last.locked;
+    return { to: "quiet-hours", bypass: left, remember: !left };
+  }
+  return { to: shown === "quiet-hours" && !locked ? "back" : null, bypass: false, remember: false };
+}
+
+test("only_with_chip off: the move is today's in every case, whatever the layout carries", () => {
+  for (const locked of [true, false]) {
+    for (const shown of [null, "quiet-hours", "work", "plain"]) {
+      for (const lastShown of [null, "quiet-hours", "work"]) {
+        for (const lastLocked of [true, false]) {
+          for (const carries of [true, false]) {
+            const m = boardMove({ locked, shown, last: { shown: lastShown, locked: lastLocked }, only: false, carries });
+            const why = JSON.stringify({ locked, shown, lastShown, lastLocked, carries });
+            assert.equal(m.applies, true, why);
+            assert.deepEqual({ to: m.to, bypass: Boolean(m.bypass), remember: m.remember }, before({ locked, shown, last: { shown: lastShown, locked: lastLocked } }), why);
+            if (m.bypass) assert.deepEqual(m.bypass, { stayed: false }, why);
+          }
+        }
+      }
+    }
+  }
+});
+
+test("only_with_chip on: a layout without the chip is left alone, and leaving the board for it is a bypass that stays", () => {
+  const move = (locked, shown, lastShown, lastLocked, carries) => boardMove({ locked, shown, last: { shown: lastShown, locked: lastLocked }, only: true, carries });
+  // Quiet starts (or goes on) in a layout without the chip: nothing moves, no sounds rule.
+  assert.deepEqual(move(true, "plain", "plain", false, false), { applies: false, to: null, bypass: null, remember: false });
+  // Off the locked board to it: logged, stayed, and not the morning's layout.
+  assert.deepEqual(move(true, "plain", "quiet-hours", true, false), { applies: false, to: null, bypass: { stayed: true }, remember: false });
+  // The next tick there: no second bypass, still not remembered.
+  assert.deepEqual(move(true, "plain", "plain", true, false), { applies: false, to: null, bypass: null, remember: false });
+  // From there to a layout with the chip: the board, as today's rule gives.
+  assert.deepEqual(move(true, "work", "plain", true, true), { applies: true, to: "quiet-hours", bypass: null, remember: true });
+  // Off the locked board to a layout with the chip: pulled back, as today.
+  assert.deepEqual(move(true, "work", "quiet-hours", true, true), { applies: true, to: "quiet-hours", bypass: { stayed: false }, remember: false });
+  // On the board: it applies; not locked, back to the return layout as today.
+  assert.deepEqual(move(true, "quiet-hours", "quiet-hours", true, false), { applies: true, to: null, bypass: null, remember: false });
+  assert.deepEqual(move(false, "quiet-hours", "quiet-hours", true, false), { applies: true, to: "back", bypass: null, remember: false });
+  // Quiet ends (or is unlocked) in a layout without the chip: no switch.
+  assert.deepEqual(move(false, "plain", "plain", true, false), { applies: false, to: null, bypass: null, remember: false });
+  // Unlocked in a layout with the chip: it applies (the sounds stay off), nothing moves.
+  assert.deepEqual(move(false, "work", "work", false, true), { applies: true, to: null, bypass: null, remember: false });
+  // herdr not answering: the safe side, quiet applies; nothing to move.
+  assert.deepEqual(move(true, null, "plain", true, false), { applies: true, to: null, bypass: null, remember: false });
 });
 
 // ---- the apply-tonight guardrail (que's effectiveConfig cases) ---------------
